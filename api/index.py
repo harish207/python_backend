@@ -1,4 +1,3 @@
-# Flask app goes here 
 # api/index.py
 import os
 import json
@@ -7,19 +6,29 @@ import requests
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from requests.auth import HTTPBasicAuth
+from pymongo import MongoClient
 
 load_dotenv()
 
 app = Flask(__name__)
 
+# ENV variables
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 REDIRECT_URI = os.getenv("REDIRECT_URI")
 TOKEN_URL = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
 
+# MongoDB setup
+MONGO_URI = os.getenv("MONGO_URI")
+MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "quickbooks")
+MONGO_COLLECTION = os.getenv("MONGO_COLLECTION", "tokens")
+client = MongoClient(MONGO_URI)
+db = client[MONGO_DB_NAME]
+collection = db[MONGO_COLLECTION]
+
 @app.route('/')
 def home():
-    return '✅ Flask backend running on Vercel!'
+    return '✅ Flask backend running on Vercel with MongoDB!'
 
 @app.route('/oauth/callback')
 def oauth_callback():
@@ -49,8 +58,12 @@ def oauth_callback():
     tokens = res.json()
     tokens['expires_at'] = time.time() + tokens.get('expires_in', 3600)
 
-    return jsonify(tokens)
+    # Save tokens in MongoDB with realm_id as identifier
+    collection.update_one(
+        {"realm_id": realm_id},
+        {"$set": {**tokens, "realm_id": realm_id}},
+        upsert=True
+    )
 
-# if __name__ == '__main__':
-#     # Only runs if testing locally
-#     app.run(port=8000)
+    return jsonify({"status": "✅ Tokens saved to MongoDB", "realm_id": realm_id})
+
